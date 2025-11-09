@@ -315,7 +315,7 @@ export default function VideoCard({
       }}
     >
       {/* 图片和播放按钮 */}
-      <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
+      <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg'>
         {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
         <Image
           src={processImageUrl(actualPoster)}
@@ -368,7 +368,7 @@ export default function VideoCard({
                 size={20}
                 className={`transition-all duration-300 ease-out ${
                   favorited
-                    ? 'fill-red-600 stroke-red-600'
+                    ? 'fill-transparent stroke-red-600'
                     : 'fill-transparent stroke-white hover:stroke-red-400'
                 } hover:scale-[1.1]`}
               />
