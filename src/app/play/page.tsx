@@ -1647,10 +1647,10 @@ function PlayPageContent() {
           
           // 自动播放视频
           try {
-            artPlayerRef.current.play().catch(err => {
+            artPlayerRef.current.play().catch((err: unknown) => {
               console.log('自动播放失败（可能是浏览器策略限制）:', err);
             });
-          } catch (err) {
+          } catch (err: unknown) {
             console.warn('播放调用失败:', err);
           }
         }, 0);
@@ -2167,11 +2167,11 @@ function PlayPageContent() {
                       )}
                        
                       {/* 集数信息 */}
-                      {(detail?.total_episodes || totalEpisodes > 1) && (
+                      {(totalEpisodes > 1) && (
                         <div className='text-center'>
                           <div className='text-sm text-gray-500 dark:text-gray-400 mb-1'>集数</div>
                           <div className='font-medium text-gray-800 dark:text-gray-200'>
-                            {(detail?.total_episodes || totalEpisodes)}集
+                            {totalEpisodes}集
                           </div>
                         </div>
                       )}
