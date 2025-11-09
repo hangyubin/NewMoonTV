@@ -315,7 +315,7 @@ async function initConfig() {
         adminConfig = {
           ConfigFile: JSON.stringify(fileConfig),
           SiteConfig: {
-            SiteName: process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV',
+            SiteName: process.env.NEXT_PUBLIC_SITE_NAME || 'cocotv',
             Announcement:
               process.env.ANNOUNCEMENT ||
               '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。',
@@ -371,7 +371,7 @@ async function initConfig() {
     cachedConfig = {
       ConfigFile: JSON.stringify(fileConfig),
       SiteConfig: {
-        SiteName: process.env.SITE_NAME || 'MoonTV',
+        SiteName: process.env.SITE_NAME || 'cocotv',
         Announcement:
           process.env.ANNOUNCEMENT ||
           '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。',
@@ -711,7 +711,7 @@ export async function resetConfig() {
   const adminConfig = {
     ConfigFile: JSON.stringify(fileConfig),
     SiteConfig: {
-      SiteName: process.env.SITE_NAME || 'MoonTV',
+      SiteName: process.env.SITE_NAME || 'cocotv',
       Announcement:
         process.env.ANNOUNCEMENT ||
         '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。',
