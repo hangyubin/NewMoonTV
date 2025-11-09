@@ -263,7 +263,7 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
             }
           }}
         >
-          <span className='text-2xl font-bold text-green-600 tracking-tight'>
+          <span className='text-2xl font-bold text-green-600 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 animate-pulse'>
             {siteName}
           </span>
         </Link>
