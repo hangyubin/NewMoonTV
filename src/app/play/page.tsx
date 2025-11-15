@@ -19,8 +19,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
-import { getRequestTimeout,getVideoResolutionFromM3u8 } from '@/lib/utils';
-import { defaultRanker } from '@/lib/searchRanking';
+import { getRequestTimeout, getVideoResolutionFromM3u8 } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -132,7 +131,7 @@ function PlayPageContent() {
 
   // 搜索所需信息
   const [searchTitle] = useState(searchParams.get('stitle') || '');
-  const [searchType] = useState(searchParams.get('stype') || '');
+  const [_searchType] = useState(searchParams.get('stype') || '');
 
   // 是否需要优选
   const [needPrefer, _setNeedPrefer] = useState(
@@ -673,34 +672,31 @@ function PlayPageContent() {
                 const data = JSON.parse(line) as { pageResults?: SearchResult[] };
                 if (data.pageResults) {
                   const filteredResults: SearchResult[] = data.pageResults.filter(
-                    (r: SearchResult) => {
-                      const titleMatch =
-                        r.title.trim().replace(/\s+/g, ' ').toLowerCase() ===
-                        videoTitleRef.current.trim().replace(/\s+/g, ' ').toLowerCase();
-                      const yearMatch = videoYearRef.current
-                        ? r.year.toLowerCase() ===
-                          videoYearRef.current.toLowerCase()
-                        : true;
-                      const typeMatch = searchType
-                        ? (searchType === 'tv' && r.episodes.length > 1) ||
-                          (searchType === 'movie' && r.episodes.length === 1)
-                        : true;
-                      return titleMatch && yearMatch && typeMatch;
+                    (_r: SearchResult) => {
+                      // 移除严格过滤条件，显示所有搜索结果
+                      // 让用户能看到所有源，然后在UI中选择合适的源
+                      return true;
                     }
                   );
   
                   if (filteredResults.length > 0) {
                     const newOnes = filteredResults.filter(
-                      (r) =>
+                      (_r: SearchResult) =>
                         !aggregatedResults.some(
-                          (item) => item.source === r.source && item.id === r.id
+                          (item) => item.source === _r.source && item.id === _r.id
                         )
                     );
   
                     if (newOnes.length > 0) {
-                      // 使用改进的去重算法处理新结果
+                      // 使用优化的宽松去重算法
                       const allResults = [...aggregatedResults, ...newOnes];
-                      const deduplicatedResults = defaultRanker.deduplicateSearchResults(allResults);
+                      // 保留更宽松的去重策略，避免过度过滤
+                      const deduplicatedResults = allResults.filter((item, index, self) => {
+                        return index === self.findIndex(t => 
+                          // 只去除完全相同的重复项（标题+年份+源都相同）
+                          t.title === item.title && t.year === item.year && t.source === item.source
+                        );
+                      });
                       
                       aggregatedResults.splice(0, aggregatedResults.length, ...deduplicatedResults);
                       setAvailableSources([...aggregatedResults]);
@@ -772,7 +768,9 @@ function PlayPageContent() {
       let detailData: SearchResult | null = null;
       let allResults: SearchResult[] = [];
       
-      await fetchSourcesData(videoTitle, (newResults) => {
+      // 优先使用原始搜索词（stitle），如果没有则使用视频标题
+    const searchQuery = searchTitle || videoTitle;
+    await fetchSourcesData(searchQuery, (newResults) => {
         allResults = [...allResults, ...newResults];
       
         // 如果还没确定 detailData，就尝试找目标源

@@ -354,7 +354,8 @@ export class SearchResultRanker {
       for (const key of keys) {
         if (seen.has(key)) {
           isDuplicate = true;
-          const existing = seen.get(key)!;
+          const existing = seen.get(key);
+          if (!existing) continue;
           const existingFinalScore = this.calculateFinalScore(existing.scores);
           const currentFinalScore = this.calculateFinalScore(item.scores);
           
@@ -571,13 +572,20 @@ export class SearchResultRanker {
    * 简化的去重方法，直接处理SearchResult数组
    */
   public deduplicateSearchResults(results: SearchResult[]): SearchResult[] {
-    const scoredResults = results.map(result => ({
-      result,
-      scores: { titleScore: 0, yearScore: 0, sourceScore: 0, popularityScore: 0, recencyScore: 0 }
-    }));
+    if (!results || results.length === 0) return results;
     
-    const deduplicated = this.deduplicateResults(scoredResults);
-    return deduplicated.map(item => item.result);
+    const seen = new Set<string>();
+    const uniqueResults: SearchResult[] = [];
+    
+    for (const result of results) {
+      const mainKey = this.generatePrimaryDeduplicationKey(result);
+      if (!seen.has(mainKey)) {
+        seen.add(mainKey);
+        uniqueResults.push(result);
+      }
+    }
+    
+    return uniqueResults;
   }
 }
 
