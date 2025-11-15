@@ -20,6 +20,7 @@ import {
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
 import { getRequestTimeout,getVideoResolutionFromM3u8 } from '@/lib/utils';
+import { defaultRanker } from '@/lib/searchRanking';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -697,7 +698,11 @@ function PlayPageContent() {
                     );
   
                     if (newOnes.length > 0) {
-                      aggregatedResults.push(...newOnes);
+                      // 使用改进的去重算法处理新结果
+                      const allResults = [...aggregatedResults, ...newOnes];
+                      const deduplicatedResults = defaultRanker.deduplicateSearchResults(allResults);
+                      
+                      aggregatedResults.splice(0, aggregatedResults.length, ...deduplicatedResults);
                       setAvailableSources([...aggregatedResults]);
                       setSourceSearchLoading(false);
                       onResult?.(newOnes);

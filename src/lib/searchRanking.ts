@@ -342,38 +342,167 @@ export class SearchResultRanker {
   }
 
   /**
-   * 去重处理
+   * 去重处理 - 增强版算法
    */
-  private deduplicateResults(scoredResults: Array<{result: SearchResult, scores: any}>): Array<{result: SearchResult, scores: any}> {
-    const seen = new Map<string, {result: SearchResult, scores: any}>();
+  public deduplicateResults(scoredResults: Array<{result: SearchResult, scores: any}>): Array<{result: SearchResult, scores: any}> {
+    const seen = new Map<string, {result: SearchResult, scores: any, weight: number}>();
     
     for (const item of scoredResults) {
-      const key = this.generateDeduplicationKey(item.result);
+      const keys = this.generateMultipleDeduplicationKeys(item.result);
+      let isDuplicate = false;
       
-      if (!seen.has(key)) {
-        seen.set(key, item);
-      } else {
-        // 如果重复，保留评分更高的
-        const existing = seen.get(key);
-        if (existing) {
+      for (const key of keys) {
+        if (seen.has(key)) {
+          isDuplicate = true;
+          const existing = seen.get(key)!;
           const existingFinalScore = this.calculateFinalScore(existing.scores);
           const currentFinalScore = this.calculateFinalScore(item.scores);
           
+          // 如果当前结果评分更高，替换
           if (currentFinalScore > existingFinalScore) {
-            seen.set(key, item);
+            seen.set(key, { ...item, weight: key.length }); // 键越长表示匹配越精确
+            // 更新所有相关键
+            for (const otherKey of keys) {
+              seen.set(otherKey, { ...item, weight: otherKey.length });
+            }
+          } else {
+            // 也更新现有结果的其他键
+            for (const otherKey of keys) {
+              if (otherKey !== key) {
+                seen.set(otherKey, existing);
+              }
+            }
           }
+          break;
+        }
+      }
+      
+      // 如果不是重复结果，添加到seen
+      if (!isDuplicate) {
+        for (const key of keys) {
+          seen.set(key, { ...item, weight: key.length });
         }
       }
     }
     
-    return Array.from(seen.values());
+    // 按权重排序，返回最准确的结果
+    const results = Array.from(seen.values());
+    const uniqueResults = new Map<string, {result: SearchResult, scores: any}>();
+    
+    for (const item of results) {
+      const mainKey = this.generatePrimaryDeduplicationKey(item.result);
+      if (!uniqueResults.has(mainKey)) {
+        uniqueResults.set(mainKey, { result: item.result, scores: item.scores });
+      }
+    }
+    
+    return Array.from(uniqueResults.values());
   }
 
   /**
-   * 生成去重键
+   * 生成多个去重键用于精确匹配
+   */
+  private generateMultipleDeduplicationKeys(result: SearchResult): string[] {
+    const title = this.normalizeTitle(result.title);
+    const year = result.year || '';
+    const doubanId = result.douban_id || '';
+    
+    const keys: string[] = [];
+    
+    // 1. 主要键：标题+年份（最严格）
+    if (title && year) {
+      keys.push(`${title}_${year}`);
+    }
+    
+    // 2. 豆瓣ID（如果有）
+    if (doubanId) {
+      keys.push(`douban_${doubanId}`);
+    }
+    
+    // 4. 标准化标题（去除特殊字符）
+    if (title) {
+      const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, '');
+      keys.push(`clean_${cleanTitle}`);
+      
+      // 5. 标题+首字母缩写
+      const initials = this.getTitleInitials(result.title);
+      if (initials && year) {
+        keys.push(`init_${initials}_${year}`);
+      }
+    }
+    
+    // 6. 模糊匹配键（容错处理）
+    if (title && title.length > 3) {
+      // 标题前几个字符
+      keys.push(`prefix_${title.substring(0, Math.min(8, title.length))}`);
+      
+      // 关键词组合
+      const keywords = this.extractKeywords(title);
+      if (keywords.length >= 2) {
+        keys.push(`kw_${keywords.slice(0, 3).join('_')}`);
+      }
+    }
+    
+    return keys;
+  }
+
+  /**
+   * 生成主要去重键
+   */
+  private generatePrimaryDeduplicationKey(result: SearchResult): string {
+    const doubanId = result.douban_id || '';
+    
+    // 优先使用外部ID
+    if (doubanId) return `douban_${doubanId}`;
+    
+    // 回退到标题+年份
+    const title = this.normalizeTitle(result.title);
+    const year = result.year || '';
+    return `${title}_${year}`;
+  }
+
+  /**
+   * 标准化标题
+   */
+  private normalizeTitle(title: string): string {
+    return title.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * 获取标题首字母缩写
+   */
+  private getTitleInitials(title: string): string {
+    const words = title.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 0);
+    
+    return words.map(word => word.charAt(0)).join('');
+  }
+
+  /**
+   * 提取关键词
+   */
+  private extractKeywords(title: string): string[] {
+    // 常见的停用词
+    const stopWords = new Set(['the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', '第', '部', '季', '集', '全集']);
+    
+    const words = title.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 1 && !stopWords.has(word))
+      .slice(0, 5); // 最多取5个关键词
+    
+    return words;
+  }
+
+  /**
+   * 旧版去重键生成方法（保留兼容性）
    */
   private generateDeduplicationKey(result: SearchResult): string {
-    // 基于标题和年份生成去重键
     const title = result.title.toLowerCase().replace(/\s+/g, '').trim();
     const year = result.year || '';
     return `${title}_${year}`;
@@ -436,6 +565,19 @@ export class SearchResultRanker {
    */
   getConfig(): RankingConfig {
     return { ...this.config };
+  }
+
+  /**
+   * 简化的去重方法，直接处理SearchResult数组
+   */
+  public deduplicateSearchResults(results: SearchResult[]): SearchResult[] {
+    const scoredResults = results.map(result => ({
+      result,
+      scores: { titleScore: 0, yearScore: 0, sourceScore: 0, popularityScore: 0, recencyScore: 0 }
+    }));
+    
+    const deduplicated = this.deduplicateResults(scoredResults);
+    return deduplicated.map(item => item.result);
   }
 }
 

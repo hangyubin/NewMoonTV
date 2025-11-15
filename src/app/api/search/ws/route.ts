@@ -6,6 +6,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 import { searchFromApiStream } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
+import { searchCache } from '@/lib/searchCache';
 
 export const runtime = 'edge';
 
@@ -32,6 +33,42 @@ export async function GET(request: NextRequest) {
 
   const config = await getConfig();
   const apiSites = await getAvailableApiSites(authInfo.username);
+
+  // 检查搜索缓存
+  const cachedResults = searchCache.get(query);
+  if (cachedResults && cachedResults.length > 0) {
+    console.log(`缓存命中，使用缓存结果: ${query} (${cachedResults.length} 个结果)`);
+    
+    // 发送缓存结果
+    const cachedEvent = `data: ${JSON.stringify({
+      type: 'cached_results',
+      query,
+      results: cachedResults,
+      timestamp: Date.now()
+    })}\n\n`;
+    
+    return new Response(`data: ${JSON.stringify({
+      type: 'start',
+      query,
+      totalSources: apiSites.length,
+      cached: true,
+      timestamp: Date.now()
+    })}\n\n${cachedEvent}data: ${JSON.stringify({
+      type: 'complete',
+      totalResults: cachedResults.length,
+      cached: true,
+      timestamp: Date.now()
+    })}\n\n`, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
+  }
 
   // 共享状态
   let streamClosed = false;
@@ -77,11 +114,11 @@ export async function GET(request: NextRequest) {
       // 为每个源创建搜索 Promise
       const searchPromises = apiSites.map(async (site) => {
         try {
-          // 添加超时控制
+          // 减少超时控制并添加并发优化
           const searchPromise = Promise.race([
             searchFromApiStream(site, query),
             new Promise((_, reject) =>
-              setTimeout(() => reject(new Error(`${site.name} timeout`)), 20000)
+              setTimeout(() => reject(new Error(`${site.name} timeout`)), 8000)
             ),
           ]);
 
@@ -171,6 +208,12 @@ export async function GET(request: NextRequest) {
 
       // 等待所有搜索完成
       await Promise.allSettled(searchPromises);
+
+      // 搜索完成后保存结果到缓存
+      if (allResults.length > 0) {
+        searchCache.set(query, allResults);
+        console.log(`已缓存搜索结果: ${query} (${allResults.length} 个结果)`);
+      }
     },
 
     cancel() {
