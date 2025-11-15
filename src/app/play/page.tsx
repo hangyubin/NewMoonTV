@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment, @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps, no-console, @next/next/no-img-element */
 
 'use client';
-import { Heart, ArrowLeft } from 'lucide-react';
+import { ArrowLeft,Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -1252,16 +1252,16 @@ function PlayPageContent() {
     (async () => {
       try {
         console.log('开始加载播放器库...');
-        // 逐个加载库而不是并行加载，以便更好地追踪错误
-        const artModule = await import('artplayer');
-        console.log('ArtPlayer库加载成功');
+        // 使用更稳定的导入方式
+        const artModule = await import(/* @vite-ignore */ 'artplayer');
+        console.log('ArtPlayer库加载成功:', artModule);
         
-        const hlsModule = await import('hls.js');
-        console.log('HLS.js库加载成功');
+        const hlsModule = await import(/* @vite-ignore */ 'hls.js');
+        console.log('HLS.js库加载成功:', hlsModule);
         
         if (!mounted) return;
-        artLibRef.current = artModule.default;
-        hlsLibRef.current = hlsModule.default;
+        artLibRef.current = artModule.default || artModule;
+        hlsLibRef.current = hlsModule.default || hlsModule;
         setLibsReady(true);
         setLibLoadError(null);
       } catch (err) {

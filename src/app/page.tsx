@@ -4,7 +4,7 @@
 
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import { Suspense, useCallback, useEffect, useMemo,useState } from 'react';
 
 import {
   BangumiCalendarData,

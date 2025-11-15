@@ -5,13 +5,7 @@ import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  addSearchHistory,
-  clearSearchHistory,
-  deleteSearchHistory,
-  getSearchHistory,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
+import { SearchHistoryManager } from '@/lib/searchHistory';
 import { SearchResult } from '@/lib/types';
 import { getRequestTimeout } from '@/lib/utils';
 
@@ -26,6 +20,7 @@ import VideoCard from '@/components/VideoCard';
 function SearchPageClient() {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [searchHistoryManager] = useState(() => new SearchHistoryManager());
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -314,8 +309,16 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
 
   // 初始化：搜索历史、滚动监听
   useEffect(() => {
-    getSearchHistory().then(setSearchHistory);
-    const unsubscribe = subscribeToDataUpdates('searchHistoryUpdated', setSearchHistory);
+    const initHistory = async () => {
+      const history = await searchHistoryManager.getRecentHistory(10);
+      setSearchHistory(history.map(item => item.query));
+    };
+    initHistory();
+
+    const unsubscribe = searchHistoryManager.subscribeToUpdates((history) => {
+      setSearchHistory(history.map(item => item.query));
+    });
+
     const handleScroll = () => {
       setShowBackToTop((document.body.scrollTop || 0) > 300);
     };
@@ -324,7 +327,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
       unsubscribe();
       document.body.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [searchHistoryManager]);
 
   // 提取当前的查询参数 q 和 sources
   const currentQuery = useMemo(() => searchParams.get('q'), [searchParams]);
@@ -345,7 +348,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
       setIsLoading(true);
       setShowResults(true);
       fetchSearchResults(currentQuery);
-      addSearchHistory(currentQuery);
+      searchHistoryManager.addToHistory(currentQuery);
     } else {
       // 没有搜索参数时，聚焦输入框
       document.getElementById('searchInput')?.focus();
@@ -686,7 +689,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
               搜索历史
               {searchHistory.length > 0 && (
                 <button
-                  onClick={() => clearSearchHistory()}
+                  onClick={() => searchHistoryManager.clearAllHistory()}
                   className="ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500"
                 >
                   清空
@@ -723,7 +726,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      deleteSearchHistory(item);
+                      searchHistoryManager.removeFromHistory(item);
                       if (selectedHistoryItem === item) setSelectedHistoryItem(null);
                     }}
                     className="absolute -top-1 -right-1 w-4 h-4 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors"
@@ -736,7 +739,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      deleteSearchHistory(item);
+                      searchHistoryManager.removeFromHistory(item);
                     }}
                     className="absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors"
                   >

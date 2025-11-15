@@ -223,6 +223,60 @@ export class DbManager {
     return {};
   }
 
+  // ---------- 热门搜索相关 ----------
+  async recordTrendingSearch(keyword: string, category = '其他'): Promise<void> {
+    // 如果存储实现支持直接记录热门搜索，使用它
+    if (typeof (this.storage as any).recordTrendingSearch === 'function') {
+      await (this.storage as any).recordTrendingSearch(keyword, category);
+      return;
+    }
+
+    // 否则使用搜索历史作为备用方案（使用匿名用户）
+    try {
+      await this.addSearchHistory('_trending_', keyword);
+    } catch (error) {
+      // 如果失败，尝试使用默认用户名
+      await this.addSearchHistory('default', keyword);
+    }
+  }
+
+  async getTrendingSearches(category?: string, limit = 10): Promise<any[]> {
+    // 如果存储实现支持直接获取热门搜索，使用它
+    if (typeof (this.storage as any).getTrendingSearches === 'function') {
+      return (this.storage as any).getTrendingSearches(category, limit);
+    }
+
+    // 否则从搜索历史统计获取热门搜索（返回默认数据，因为无法获取全局搜索历史）
+    try {
+      // 这里无法获取所有用户的搜索历史，所以返回默认热门搜索数据
+      const defaultTrending = [
+        { keyword: '热门电影', count: 100, category: '电影' },
+        { keyword: '最新电视剧', count: 85, category: '电视剧' },
+        { keyword: '经典动漫', count: 75, category: '动漫' },
+        { keyword: '综艺节目', count: 60, category: '综艺' },
+        { keyword: '纪录片', count: 45, category: '纪录片' },
+      ];
+
+      // 根据类别过滤
+      let filtered = defaultTrending;
+      if (category && category !== '全部') {
+        filtered = defaultTrending.filter(item => item.category === category);
+      }
+
+      return filtered.slice(0, limit);
+    } catch (error) {
+      console.warn('获取热门搜索失败，使用默认数据:', error);
+      // 返回默认热门搜索数据
+      return [
+        { keyword: '热门电影', count: 100, category: '电影' },
+        { keyword: '最新电视剧', count: 85, category: '电视剧' },
+        { keyword: '经典动漫', count: 75, category: '动漫' },
+        { keyword: '综艺节目', count: 60, category: '综艺' },
+        { keyword: '纪录片', count: 45, category: '纪录片' },
+      ].slice(0, limit);
+    }
+  }
+
   // ---------- 数据清理 ----------
   async clearAllData(): Promise<void> {
     if (typeof (this.storage as any).clearAllData === 'function') {

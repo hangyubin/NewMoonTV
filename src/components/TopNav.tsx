@@ -8,13 +8,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { getCustomCategories } from '@/lib/config.client';
-import {
-  addSearchHistory,
-  clearSearchHistory,
-  deleteSearchHistory,
-  getSearchHistory,
-  subscribeToDataUpdates,
-} from '@/lib/db.client';
+import { SearchHistoryManager } from '@/lib/searchHistory';
 
 import { useNavigationLoading } from './NavigationLoadingProvider';
 import SearchSuggestions from './SearchSuggestions';
@@ -43,11 +37,12 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
   const [searchSources, setSearchSources] = useState<string[]>([]);
   const [openFilter, setOpenFilter] = useState<string | null>(null);
 
-  // 历史记录状态
+  // 搜索历史相关状态
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const historyButtonRef = useRef<HTMLButtonElement>(null);
   const historyPopupRef = useRef<HTMLDivElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const [searchHistoryManager] = useState(() => new SearchHistoryManager());
 
   // 检查是否启用简洁模式
   const [simpleMode, setSimpleMode] = useState(false);
@@ -62,14 +57,20 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
       }
     }
 
-    // 加载搜索历史
-    getSearchHistory().then(setSearchHistory);
-    const unsubscribe = subscribeToDataUpdates('searchHistoryUpdated', setSearchHistory);
-    
-    return () => {
-      unsubscribe();
+    // 初始化搜索历史
+    const initHistory = async () => {
+      const history = await searchHistoryManager.getRecentHistory(10);
+      setSearchHistory(history.map(item => item.query));
     };
-  }, []);
+    initHistory();
+
+    // 监听数据更新
+    const unsubscribe = searchHistoryManager.subscribeToUpdates((history) => {
+      setSearchHistory(history.map(item => item.query));
+    });
+
+    return unsubscribe;
+  }, [searchHistoryManager]);
 
   useEffect(() => {
     if (activePath) {
@@ -141,7 +142,7 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
     const trimmedQuery = searchQuery.trim();
     if (trimmedQuery) {
       // 添加到搜索历史
-      addSearchHistory(trimmedQuery);
+      searchHistoryManager.addToHistory(trimmedQuery);
       
       // 如果不在搜索页面，触发加载动画
       if (pathname !== '/search') {
@@ -172,7 +173,7 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
     setShowHistory(false); // 选择建议时关闭历史记录
     
     // 添加到搜索历史
-    addSearchHistory(suggestion);
+    searchHistoryManager.addToHistory(suggestion);
     
     // 如果不在搜索页面，触发加载动画
     if (pathname !== '/search') {
@@ -205,7 +206,7 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
     setShowHistory(false);
     
     // 添加到搜索历史（更新时间戳）
-    addSearchHistory(item);
+    searchHistoryManager.addToHistory(item);
     
     // 如果不在搜索页面，触发加载动画
     if (pathname !== '/search') {
@@ -222,11 +223,11 @@ const TopNav = ({ activePath = '/' }: TopNavProps) => {
 
   const handleDeleteHistory = async (item: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await deleteSearchHistory(item);
+    await searchHistoryManager.removeFromHistory(item);
   };
 
   const handleClearAllHistory = async () => {
-    await clearSearchHistory();
+    await searchHistoryManager.clearAllHistory();
     setShowHistory(false);
   };
 

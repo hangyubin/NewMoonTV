@@ -5,6 +5,8 @@ import { NextRequest } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getAvailableApiSites, getCacheTime, getConfig } from '@/lib/config';
 import { searchFromApiStream } from '@/lib/downstream';
+import { SearchResult } from '@/lib/types';
+import { SearchResultRanker } from '@/lib/searchRanking';
 import { yellowWords } from '@/lib/yellow';
 
 export const runtime = 'edge';
@@ -89,7 +91,7 @@ export async function GET(request: NextRequest) {
   // -------------------------
   if (!enableStream) {
     const tasks = apiSites.map(async (site) => {
-      const siteResults: any[] = [];
+      const siteResults: SearchResult[] = [];
       let hasResults = false;
       try {
         const generator = searchFromApiStream(site, query, true, timeout);
@@ -113,16 +115,20 @@ export async function GET(request: NextRequest) {
           throw new Error('无搜索结果');
         }
         return { siteResults, failed: null };
-      } catch (err: any) {
-        let errorMessage = err.message || '未知的错误';
+      } catch (err: unknown) {
+        let errorMessage = '未知的错误';
         
         // 根据错误类型提供更具体的错误信息
-        if (err.message === '请求超时') {
-          errorMessage = '请求超时';
-        } else if (err.message === '网络连接失败') {
-          errorMessage = '网络连接失败';
-        } else if (err.message.includes('网络错误')) {
-          errorMessage = '网络错误';
+        if (err instanceof Error) {
+          if (err.message === '请求超时') {
+            errorMessage = '请求超时';
+          } else if (err.message === '网络连接失败') {
+            errorMessage = '网络连接失败';
+          } else if (err.message.includes('网络错误')) {
+            errorMessage = '网络错误';
+          } else {
+            errorMessage = err.message || '未知的错误';
+          }
         }
         
         return {
@@ -136,7 +142,19 @@ export async function GET(request: NextRequest) {
     const aggregatedResults = results.flatMap((r) => r.siteResults);
     const failedSources = results.filter((r) => r.failed).map((r) => r.failed);
 
-    if (aggregatedResults.length === 0) {
+    // 智能排序：按相关性、质量等多维度排序
+    const ranker = new SearchResultRanker();
+    let finalResults = aggregatedResults;
+    
+    if (aggregatedResults.length > 0) {
+      try {
+        finalResults = await ranker.rankResults(aggregatedResults, query);
+      } catch (error) {
+        console.warn('排序失败，使用原始结果:', error);
+      }
+    }
+
+    if (finalResults.length === 0) {
       const body = { results: [], failedSources };
       return new Response(JSON.stringify(body), {
         headers: {
@@ -148,7 +166,7 @@ export async function GET(request: NextRequest) {
       });
     } else {
       const cacheTime = await getCacheTime();
-      const body = { results: aggregatedResults, failedSources };
+      const body = { results: finalResults, failedSources };
       return new Response(JSON.stringify(body), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -162,7 +180,7 @@ export async function GET(request: NextRequest) {
   // 流式：并发
   // -------------------------
   (async () => {
-    const aggregatedResults: any[] = [];
+    const aggregatedResults: SearchResult[] = [];
     const failedSources: { name: string; key: string; error: string }[] = [];
 
     const tasks = apiSites.map(async (site) => {
@@ -198,18 +216,22 @@ export async function GET(request: NextRequest) {
           failedSources.push({ name: site.name, key: site.key, error: '无搜索结果' });
           await safeWrite({ failedSources });
         }
-      } catch (err: any) {
-        console.warn(`搜索失败 ${site.name}:`, err.message);
-        let errorMessage = err.message || '未知的错误';
-        
-        // 根据错误类型提供更具体的错误信息
-        if (err.message === '请求超时') {
-          errorMessage = '请求超时';
-        } else if (err.message === '请求失败') {
-          errorMessage = '请求失败';
-        } else if (err.message.includes('网络错误')) {
-          errorMessage = '网络错误';
-        }
+      } catch (err: unknown) {
+          let errorMessage = '未知的错误';
+          
+          // 根据错误类型提供更具体的错误信息
+          if (err instanceof Error) {
+            console.warn(`搜索失败 ${site.name}:`, err.message);
+            if (err.message === '请求超时') {
+              errorMessage = '请求超时';
+            } else if (err.message === '请求失败') {
+              errorMessage = '请求失败';
+            } else if (err.message.includes('网络错误')) {
+              errorMessage = '网络错误';
+            } else {
+              errorMessage = err.message || '未知的错误';
+            }
+          }
         
         failedSources.push({ name: site.name, key: site.key, error: errorMessage });
         await safeWrite({ failedSources });
@@ -222,7 +244,19 @@ export async function GET(request: NextRequest) {
     if (failedSources.length > 0) {
       await safeWrite({ failedSources });
     }
-    await safeWrite({ aggregatedResults });
+
+    // 智能排序：在流式模式下，所有结果收集完成后进行排序
+    let finalAggregatedResults = aggregatedResults;
+    if (aggregatedResults.length > 0) {
+      try {
+        const ranker = new SearchResultRanker();
+        finalAggregatedResults = await ranker.rankResults(aggregatedResults, query);
+      } catch (error) {
+        console.warn('流式排序失败，使用原始结果:', error);
+      }
+    }
+    
+    await safeWrite({ aggregatedResults: finalAggregatedResults });
 
     try {
       await writer.close();
